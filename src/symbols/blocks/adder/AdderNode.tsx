@@ -1,6 +1,12 @@
-import { Position, type NodeProps } from '@xyflow/react'
+import { useEffect } from 'react'
+import {
+  Position,
+  type NodeProps,
+  useUpdateNodeInternals,
+} from '@xyflow/react'
 import Pin from '../../common/Pin'
 import type { SymbolNodeData } from '../../types'
+import { getSymbolStyle } from '../../common/symbolStyle'
 import {
   ADDER_GEOMETRY,
   getAdderGeometry,
@@ -12,7 +18,8 @@ export { ADDER_GEOMETRY, getAdderGeometry, getAdderPinAnchor }
 export type { AdderGeometry }
 
 export type AdderNodeData = SymbolNodeData & {
-    rotation?: 0 | 90 | 180 | 270
+  scale?: number
+  rotation?: 0 | 90 | 180 | 270
 }
 
 function InputPinVisual({
@@ -21,12 +28,16 @@ function InputPinVisual({
   geometry,
   occupied,
   showCircle,
+  strokeColor,
+  strokeWidth,
 }: {
   x: number
   y: number
   geometry: AdderGeometry
   occupied: boolean
   showCircle: boolean
+  strokeColor: string
+  strokeWidth: number
 }) {
   const startX = occupied ? x - geometry.connectedOverlap : x
 
@@ -37,11 +48,19 @@ function InputPinVisual({
         y1={y}
         x2={geometry.inputStubEndX}
         y2={y}
-        stroke="#111"
-        strokeWidth="2"
+        stroke={strokeColor}
+        strokeWidth={strokeWidth}
         strokeLinecap="square"
       />
-      {showCircle && <circle cx={x} cy={y} r={geometry.pinCircleRadius} fill="#111" />}
+
+      {showCircle && (
+        <circle
+          cx={x}
+          cy={y}
+          r={geometry.pinCircleRadius}
+          fill={strokeColor}
+        />
+      )}
     </>
   )
 }
@@ -50,10 +69,14 @@ function OutputPinVisual({
   geometry,
   occupied,
   showCircle,
+  strokeColor,
+  strokeWidth,
 }: {
   geometry: AdderGeometry
   occupied: boolean
   showCircle: boolean
+  strokeColor: string
+  strokeWidth: number
 }) {
   const endX = occupied
     ? geometry.outputStubEndX + geometry.connectedOverlap
@@ -66,16 +89,17 @@ function OutputPinVisual({
         y1={geometry.out.y}
         x2={endX}
         y2={geometry.out.y}
-        stroke="#111"
-        strokeWidth="2"
+        stroke={strokeColor}
+        strokeWidth={strokeWidth}
         strokeLinecap="square"
       />
+
       {showCircle && (
         <circle
           cx={geometry.out.x}
           cy={geometry.out.y}
           r={geometry.pinCircleRadius}
-          fill="#111"
+          fill={strokeColor}
         />
       )}
     </>
@@ -84,11 +108,19 @@ function OutputPinVisual({
 
 export function AdderNode({ id, data }: NodeProps) {
   const nodeData = (data ?? {}) as AdderNodeData
+
   const occupiedHandles = nodeData.occupiedHandles ?? []
   const wireMode = nodeData.wireMode ?? false
   const rotation = nodeData.rotation ?? 0
+  const scale = nodeData.scale ?? 1
 
-  const geometry = getAdderGeometry()
+  const style = getSymbolStyle(nodeData)
+  const geometry = getAdderGeometry(scale)
+  const updateNodeInternals = useUpdateNodeInternals()
+
+  useEffect(() => {
+    updateNodeInternals(id)
+  }, [id, scale, geometry.width, geometry.height, updateNodeInternals])
 
   const isOccupied = (handleId: string) => occupiedHandles.includes(handleId)
   const shouldShowCircle = (handleId: string) =>
@@ -96,8 +128,8 @@ export function AdderNode({ id, data }: NodeProps) {
 
   const bodyPath = `
     M ${geometry.bodyLeftX} ${geometry.bodyTopY}
-    L ${geometry.bodyRightX} ${geometry.bodyMidY - 10}
-    L ${geometry.bodyRightX} ${geometry.bodyMidY + 10}
+    L ${geometry.bodyRightX} ${geometry.bodyMidY - geometry.notchHalfHeight}
+    L ${geometry.bodyRightX} ${geometry.bodyMidY + geometry.notchHalfHeight}
     L ${geometry.bodyLeftX} ${geometry.bodyBottomY}
     L ${geometry.bodyLeftX} ${geometry.notchMidY + geometry.notchHalfHeight}
     L ${geometry.notchTipX} ${geometry.notchMidY}
@@ -129,9 +161,7 @@ export function AdderNode({ id, data }: NodeProps) {
           position={Position.Left}
           top={`${geometry.inA.y}px`}
           left={`${geometry.inA.x}px`}
-          onPointerDown={() => {
-            nodeData.onPinClick?.(id, 'inA', 'target')
-          }}
+          onPointerDown={() => nodeData.onPinClick?.(id, 'inA', 'target')}
         />
 
         <Pin
@@ -140,9 +170,7 @@ export function AdderNode({ id, data }: NodeProps) {
           position={Position.Left}
           top={`${geometry.inB.y}px`}
           left={`${geometry.inB.x}px`}
-          onPointerDown={() => {
-            nodeData.onPinClick?.(id, 'inB', 'target')
-          }}
+          onPointerDown={() => nodeData.onPinClick?.(id, 'inB', 'target')}
         />
 
         <Pin
@@ -151,9 +179,7 @@ export function AdderNode({ id, data }: NodeProps) {
           position={Position.Right}
           top={`${geometry.out.y}px`}
           left={`${geometry.out.x}px`}
-          onPointerDown={() => {
-            nodeData.onPinClick?.(id, 'out', 'source')
-          }}
+          onPointerDown={() => nodeData.onPinClick?.(id, 'out', 'source')}
         />
 
         <svg
@@ -168,6 +194,8 @@ export function AdderNode({ id, data }: NodeProps) {
             geometry={geometry}
             occupied={isOccupied('inA')}
             showCircle={shouldShowCircle('inA')}
+            strokeColor={style.strokeColor}
+            strokeWidth={style.strokeWidth}
           />
 
           <InputPinVisual
@@ -176,13 +204,15 @@ export function AdderNode({ id, data }: NodeProps) {
             geometry={geometry}
             occupied={isOccupied('inB')}
             showCircle={shouldShowCircle('inB')}
+            strokeColor={style.strokeColor}
+            strokeWidth={style.strokeWidth}
           />
 
           <path
             d={bodyPath}
-            fill="white"
-            stroke="#111"
-            strokeWidth="2"
+            fill={style.fillColor}
+            stroke={style.strokeColor}
+            strokeWidth={style.strokeWidth}
             strokeLinejoin="miter"
           />
 
@@ -190,18 +220,20 @@ export function AdderNode({ id, data }: NodeProps) {
             geometry={geometry}
             occupied={isOccupied('out')}
             showCircle={shouldShowCircle('out')}
+            strokeColor={style.strokeColor}
+            strokeWidth={style.strokeWidth}
           />
 
           <text
-            x={geometry.plusX}
-            y={geometry.plusY}
+            x={geometry.plusX + style.labelOffsetX}
+            y={geometry.plusY + style.labelOffsetY}
             textAnchor="middle"
             dominantBaseline="middle"
-            fontSize="22"
+            fontSize={style.labelSize + 6}
             fontWeight="700"
-            fill="#111"
+            fill={style.labelColor}
           >
-            +
+            {nodeData.label ?? '+'}
           </text>
         </svg>
       </div>

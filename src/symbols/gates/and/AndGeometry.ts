@@ -1,15 +1,11 @@
 import type { Point } from '../../../wires/OrthogonalEdge'
-import { getGeometryBounds } from '../../common/geometryBounds'
+import { SYMBOL_CENTER_Y, SYMBOL_PIN_SPACING } from '../../common/layout'
+import { getSymbolScale, s } from '../../common/scale'
 
 export type PinPoint = {
   x: number
   y: number
 }
-
-import {
-  SYMBOL_CENTER_Y,
-  SYMBOL_PIN_SPACING,
-} from '../../common/layout'
 
 export type AndGeometry = {
   width: number
@@ -18,7 +14,6 @@ export type AndGeometry = {
   in1: PinPoint
   in2: PinPoint
   out: PinPoint
-
   inputPins: PinPoint[]
 
   inputStubEndX: number
@@ -39,61 +34,74 @@ export type AndGeometry = {
 
   centerX: number
   centerY: number
+
+  offsetX: number
+  offsetY: number
 }
 
 const DEFAULT_INPUT_COUNT = 2
+const GRID = 10
+
+function snap(value: number) {
+  return Math.round(value / GRID) * GRID
+}
+
+function snapUp(value: number) {
+  return Math.ceil(value / GRID) * GRID
+}
 
 export function getAndInputHandleId(index: number): string {
   return `in${index + 1}`
 }
 
-export function getAndGeometry(inputCount = DEFAULT_INPUT_COUNT): AndGeometry {
+export function getAndGeometry(
+  inputCount = DEFAULT_INPUT_COUNT,
+  rawScale: unknown = 1
+): AndGeometry {
+  const scale = getSymbolScale(rawScale)
+  const safeInputCount = Math.max(2, Math.floor(inputCount))
 
-const safeInputCount = Math.max(2, Math.floor(inputCount))
+  const offsetX = s(20, scale)
+  const offsetY = s(20, scale)
 
-const bodyLeftX = 16
-const inputStubEndX = 16
-const bodyFlatWidth = 30
+  const bodyFlatWidth = s(30, scale)
+  const inputSpacing = s(SYMBOL_PIN_SPACING, scale)
 
-const inputSpacing = SYMBOL_PIN_SPACING
-const bodyMidY = SYMBOL_CENTER_Y
+  const bodyMidY = snap(offsetY + s(SYMBOL_CENTER_Y, scale))
+  const bodyLeftX = snap(offsetX + s(20, scale))
+  const inputStubEndX = bodyLeftX
 
-const inputPins: PinPoint[] = Array.from({ length: safeInputCount }, (_, index) => ({
-  x: 0,
-  y: bodyMidY + (index - (safeInputCount - 1) / 2) * inputSpacing,
-}))
+  const inputPins: PinPoint[] = Array.from(
+    { length: safeInputCount },
+    (_, index) => ({
+      x: offsetX,
+      y: snap(
+        bodyMidY +
+          (index - (safeInputCount - 1) / 2) * inputSpacing
+      ),
+    })
+  )
 
-const bodyTopY = inputPins[0].y - 10
-const bodyBottomY = inputPins[inputPins.length - 1].y + 10
+  const pinPaddingY = s(10, scale)
 
-const bodyRadius = (bodyBottomY - bodyTopY) / 2
-const bodyRightStartX = bodyLeftX + bodyFlatWidth
+  const bodyTopY = snap(inputPins[0].y - pinPaddingY)
+  const bodyBottomY = snap(inputPins[inputPins.length - 1].y + pinPaddingY)
 
-const outY = bodyMidY
-const outputStubStartX = bodyRightStartX + bodyRadius
-const outputStubEndX = outputStubStartX + 12
+  const bodyRadius = snap((bodyBottomY - bodyTopY) / 2)
+  const bodyRightStartX = snap(bodyLeftX + bodyFlatWidth)
 
-const maxBodyX = Math.max(
-  bodyLeftX,
-  bodyRightStartX + bodyRadius,
-  outputStubEndX
-)
+  const outY = bodyMidY
+  const outputStubStartX = snap(bodyRightStartX + bodyRadius)
+  const outputStubEndX = snap(outputStubStartX + s(20, scale))
 
-const maxBodyY = Math.max(
-  bodyBottomY,
-  outY,
-  ...inputPins.map((pin) => pin.y)
-)
+  const rightMost = outputStubEndX
+  const bottomMost = bodyBottomY
 
-const { width, height } = getGeometryBounds({
-  maxX: maxBodyX,
-  maxY: maxBodyY,
-  paddingX: 10,
-  paddingY: 10,
-})
+  const width = snapUp(rightMost + offsetX)
+  const height = snapUp(bottomMost + offsetY)
 
-const labelX = bodyLeftX + bodyFlatWidth / 2 + 10
-const labelY = outY + 6
+  const labelX = snap(bodyLeftX + bodyFlatWidth / 2 + s(10, scale))
+  const labelY = snap(outY + s(6, scale))
 
   return {
     width,
@@ -118,45 +126,50 @@ const labelY = outY + 6
     labelX,
     labelY,
 
-    pinCircleRadius: 3.5,
+    pinCircleRadius: Math.max(3.5, 3.5 * Math.sqrt(scale)),
     connectedOverlap: 2,
 
-    centerX: width / 2,
-    centerY: height / 2,
+    centerX: snap(width / 2),
+    centerY: snap(height / 2),
+
+    offsetX,
+    offsetY,
   }
 }
 
-export const AND_GEOMETRY = getAndGeometry(DEFAULT_INPUT_COUNT)
+export const AND_GEOMETRY = getAndGeometry(DEFAULT_INPUT_COUNT, 1)
 
 export function getAndPinAnchor(
   nodeX: number,
   nodeY: number,
   handleId: string,
-  inputCount = DEFAULT_INPUT_COUNT
+  inputCount = DEFAULT_INPUT_COUNT,
+  rawScale: unknown = 1
 ): Point {
-  const geometry = getAndGeometry(inputCount)
+  const geometry = getAndGeometry(inputCount, rawScale)
   const overlap = geometry.connectedOverlap
 
   if (handleId === 'out') {
     return {
-      x: nodeX + geometry.out.x - overlap,
-      y: nodeY + geometry.out.y,
+      x: snap(nodeX + geometry.out.x - overlap),
+      y: snap(nodeY + geometry.out.y),
     }
   }
 
   const match = /^in(\d+)$/.exec(handleId)
+
   if (match) {
     const index = Number(match[1]) - 1
     const pin = geometry.inputPins[index] ?? geometry.inputPins[0]
 
     return {
-      x: nodeX + pin.x + overlap,
-      y: nodeY + pin.y,
+      x: snap(nodeX + pin.x + overlap),
+      y: snap(nodeY + pin.y),
     }
   }
 
   return {
-    x: nodeX + geometry.out.x - overlap,
-    y: nodeY + geometry.out.y,
+    x: snap(nodeX + geometry.out.x - overlap),
+    y: snap(nodeY + geometry.out.y),
   }
 }

@@ -30,11 +30,15 @@ import Header, {
 
 import { exportDiagramTikz } from '../export/tikz/exportDiagramTikz'
 import { downloadTextFile } from '../export/tikz/downloadTex'
+import type { WorkspaceActions } from './WorkspaceActions'
+
 import {
   OrthogonalEdge,
   type OrthogonalEdgeData,
+  type OrthogonalEdgeSegmentStyle,
   type Point,
 } from '../wires/OrthogonalEdge'
+
 import { getNodeAnchor, nodeTypes } from '../symbols/registry'
 import type { SymbolNodeData } from '../symbols/types'
 
@@ -43,6 +47,7 @@ const HALF_GRID = GRID/2
 
 type FlowNode = Node<SymbolNodeData>
 type FlowEdge = Edge<OrthogonalEdgeData>
+
 
 type DraftSourcePin = {
   kind: 'pin'
@@ -60,6 +65,18 @@ type InlineInvert = {
     handleId?: string
     edgeId?: string
   }
+}
+
+type CircuitCanvasProps = {
+  leftOpen: boolean
+  setLeftOpen: React.Dispatch<React.SetStateAction<boolean>>
+  setWorkspaceActions?: React.Dispatch<React.SetStateAction<WorkspaceActions>>
+}
+
+type SelectedSegment = {
+  kind: 'edge' | 'partial'
+  id: string
+  segmentIndex: number
 }
 
 type Snapshot = {
@@ -87,6 +104,7 @@ type PartialWire = {
   sourceNodeId: string
   sourceHandleId: string
   points: Point[]
+  segmentStyles?: Record<number, OrthogonalEdgeSegmentStyle>
 }
 
 const edgeTypes: EdgeTypes = {
@@ -94,7 +112,7 @@ const edgeTypes: EdgeTypes = {
 }
 
 const edgeStyle: React.CSSProperties = {
-  stroke: '#111',
+  stroke: '#111111',
   strokeWidth: 2,
   strokeLinecap: 'square',
   strokeLinejoin: 'miter',
@@ -162,7 +180,7 @@ function isPinSource(source: DraftSource): source is DraftSourcePin {
   return source.kind === 'pin'
 }
 
-function FlowCanvas() {
+function FlowCanvas({ leftOpen, setLeftOpen, setWorkspaceActions,}: CircuitCanvasProps) {
   const [nodes, setNodes] = useNodesState<FlowNode>(initialNodes)
   const [edges, setEdges, onEdgesChange] = useEdgesState<FlowEdge>([])
   const [draft, setDraft] = useState<DraftWire | null>(null)
@@ -173,10 +191,10 @@ function FlowCanvas() {
   const [pickedNodeId, setPickedNodeId] = useState<string | null>(null)
   const [inlineInverts, setInlineInverts] = useState<InlineInvert[]>([])
 
+  const [selectedSegments, setSelectedSegments] = useState<SelectedSegment[]>([])
   const [undoStack, setUndoStack] = useState<Snapshot[]>([])
   const [redoStack, setRedoStack] = useState<Snapshot[]>([])
 
-  const [leftOpen, setLeftOpen] = useState(true)
   const [rightOpen, setRightOpen] = useState(true)
   const [tikzCodeText, setTikzCodeText] = useState('')
 
@@ -188,6 +206,51 @@ function FlowCanvas() {
   const { screenToFlowPosition, zoomIn, zoomOut } = useReactFlow()
   const viewport = useViewport()
 
+
+const workspaceActionsRef = useRef<WorkspaceActions>({})
+
+useEffect(() => {
+  workspaceActionsRef.current = {
+    undo: handleUndo,
+    redo: handleRedo,
+    deleteSelected: handleDeleteSelection,
+    rotateClockwise: handleRotateSelectedClockwise,
+    rotateCounterClockwise: handleRotateSelectedCounterClockwise,
+    toggleWireMode: handleToggleWireMode,
+    addNode: addCircuitNode,
+    exportTikz: handleExportTikz,
+    selectMode: () => {
+      setWireMode(false)
+      setDeleteMode(false)
+      clearDraftOnly()
+    },
+    junctionMode: () => {
+      setWireMode(true)
+      setDeleteMode(false)
+    },
+  }
+})
+
+useEffect(() => {
+  if (!setWorkspaceActions) return
+
+  setWorkspaceActions({
+    undo: () => workspaceActionsRef.current.undo?.(),
+    redo: () => workspaceActionsRef.current.redo?.(),
+    deleteSelected: () => workspaceActionsRef.current.deleteSelected?.(),
+    rotateClockwise: () => workspaceActionsRef.current.rotateClockwise?.(),
+    rotateCounterClockwise: () =>
+      workspaceActionsRef.current.rotateCounterClockwise?.(),
+    toggleWireMode: () => workspaceActionsRef.current.toggleWireMode?.(),
+    addNode: (type) => workspaceActionsRef.current.addNode?.(type),
+    exportTikz: () => workspaceActionsRef.current.exportTikz?.(),
+    selectMode: () => workspaceActionsRef.current.selectMode?.(),
+    labelMode: () => workspaceActionsRef.current.labelMode?.(),
+    junctionMode: () => workspaceActionsRef.current.junctionMode?.(),
+  })
+
+  return () => setWorkspaceActions({})
+}, [setWorkspaceActions])
 
 useEffect(() => {
   function onKeyDown(event: KeyboardEvent) {
@@ -201,6 +264,36 @@ useEffect(() => {
     ) {
       return
     }
+
+    // Undo / Redo
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') {
+    event.preventDefault()
+
+    if (event.shiftKey) {
+        handleRedo()
+    } else {
+        handleUndo()
+    }
+
+    return
+    }
+
+    // Ctrl + Y (Redo)
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'y') {
+    event.preventDefault()
+    handleRedo()
+    return
+}
+
+if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'a') {
+  event.preventDefault()
+
+  setSelectedNodeIds(nodes.map((node) => node.id))
+  setSelectedEdgeIds(edges.map((edge) => edge.id))
+  setSelectedSegments([])
+
+  return
+}
 
     if (event.key.toLowerCase() === 'w') {
     event.preventDefault()
@@ -246,6 +339,46 @@ useEffect(() => {
   window.addEventListener('keydown', onKeyDown)
   return () => window.removeEventListener('keydown', onKeyDown)
 }, [selectedNodeIds, wireMode, draft, nodes, mouseFlow, partialWires, inlineInverts, edges])
+
+function addCircuitNode(type: string) {
+  const defaultDataByType: Record<string, Partial<SymbolNodeData>> = {
+    andGate: { inputCount: 2 },
+    nandGate: { inputCount: 2 },
+    orGate: { inputCount: 2 },
+    norGate: { inputCount: 2 },
+    xorGate: { inputCount: 2 },
+    xnorGate: { inputCount: 2 },
+    muxGate: { selectWidth: 1, selectPosition: 'bottom' },
+    bufferGate: {},
+    invertGate: {},
+    adderGate: {},
+    registerGate: {},
+  }
+
+  const newNode: FlowNode = {
+    id: `${type}-${crypto.randomUUID()}`,
+    type,
+    position: { x: 100, y: 100 },
+    selected: false,
+    data: {
+      ...(defaultDataByType[type] ?? {}),
+      rotation: 0,
+      scale: 1,
+      label: '',
+      fillColor: '#ffffff',
+      strokeColor: '#111111',
+      strokeWidth: 2,
+      labelColor: '#111111',
+      labelSize: 14,
+      labelOffsetX: 0,
+      labelOffsetY: 0,
+    } as SymbolNodeData,
+  }
+
+  pushHistorySnapshot(nodes, edges, partialWires, inlineInverts)
+  setNodes((prev) => [...prev, newNode])
+  setSelectedNodeIds([newNode.id])
+}
 
   function handleZoomIn() {
     void zoomIn({ duration: 150 })
@@ -369,14 +502,152 @@ function findNearbyWirePoint(point: Point): Point | null {
   return null
 }
 
-function findNearbyJunction(point: Point): Point | null {
-    for (const p of junctionPoints) {
-    if (distance(point, p) <= 18) {
-        return p
-        } 
-    }
-    return null
+function handleSegmentClick(
+  event: React.MouseEvent,
+  kind: 'edge' | 'partial',
+  id: string,
+  segmentIndex: number,
+  segment: { from: Point; to: Point }
+){
+  event.preventDefault()
+  event.stopPropagation()
+
+  // Wire mode: start a new wire from the clicked segment midpoint
+  if (wireMode) {
+    const flowPos = screenToFlowPosition({
+        x: event.clientX,
+        y: event.clientY,
+        })
+
+    const snapped = {
+        x: snap(flowPos.x),
+        y: snap(flowPos.y),
+     }
+
+    setDraft({
+      source: {
+        kind: 'junction',
+        point: snapped,
+      },
+      bends: [],
+      nextOrientation: 'horizontal',
+    })
+
+    setMouseFlow(snapped)
+    setSelectedNodeIds([])
+    setSelectedEdgeIds([])
+    setSelectedSegments([])
+
+    return
+  }
+
+  // Normal mode: select segment(s)
+  if (event.shiftKey) {
+    setSelectedSegments((prev) => {
+      const exists = prev.some(
+        (s) => s.kind === kind && s.id === id && s.segmentIndex === segmentIndex
+      )
+
+      if (exists) {
+        return prev.filter(
+          (s) => s.kind === kind && s.id === id && s.segmentIndex === segmentIndex
+        )
+      }
+
+      return [...prev, { kind, id, segmentIndex }]
+    })
+  } else {
+    setSelectedSegments([{ kind, id, segmentIndex }])
+  }
+
+  setSelectedNodeIds([])
+  setSelectedEdgeIds([])
 }
+
+function updateSelectedSegmentsStyle(
+  patch: Partial<OrthogonalEdgeSegmentStyle>
+) {
+  if (selectedSegments.length === 0) return
+
+  const defaultStyle: OrthogonalEdgeSegmentStyle = {
+    stroke: '#111111',
+    strokeWidth: 2,
+    label: '',
+    labelColor: '#111111',
+    labelSize: 14,
+    labelOffsetX: 0,
+    labelOffsetY: -8,
+  }
+
+  setEdges((prev) =>
+    prev.map((edge) => {
+      const relevant = selectedSegments.filter(
+        (s) => s.kind === 'edge' && s.id === edge.id
+      )
+
+      if (relevant.length === 0) return edge
+
+      const currentSegmentStyles = edge.data?.segmentStyles ?? {}
+      const nextSegmentStyles = { ...currentSegmentStyles }
+
+      for (const segment of relevant) {
+        nextSegmentStyles[segment.segmentIndex] = {
+          ...defaultStyle,
+          ...(currentSegmentStyles[segment.segmentIndex] ?? {}),
+          ...patch,
+        }
+      }
+
+      return {
+        ...edge,
+        data: {
+          ...(edge.data ?? {}),
+          segmentStyles: nextSegmentStyles,
+        },
+      }
+    })
+  )
+
+  setPartialWires((prev) =>
+    prev.map((wire) => {
+      const relevant = selectedSegments.filter(
+        (s) => s.kind === 'partial' && s.id === wire.id
+      )
+
+      if (relevant.length === 0) return wire
+
+      const currentSegmentStyles = wire.segmentStyles ?? {}
+      const nextSegmentStyles = { ...currentSegmentStyles }
+
+      for (const segment of relevant) {
+        nextSegmentStyles[segment.segmentIndex] = {
+          ...defaultStyle,
+          ...(currentSegmentStyles[segment.segmentIndex] ?? {}),
+          ...patch,
+        }
+      }
+
+      return {
+        ...wire,
+        segmentStyles: nextSegmentStyles,
+      }
+    })
+  )
+}
+
+const selectedSegmentStyle = useMemo(() => {
+  if (selectedSegments.length !== 1) return null
+
+  const selected = selectedSegments[0]
+
+  if (selected.kind === 'edge') {
+    const edge = edges.find((e) => e.id === selected.id)
+    return edge?.data?.segmentStyles?.[selected.segmentIndex] ?? {}
+  }
+
+  const wire = partialWires.find((w) => w.id === selected.id)
+  return wire?.segmentStyles?.[selected.segmentIndex] ?? {}
+}, [selectedSegments, edges, partialWires])
 
 function normalizeRotation(value: number): 0 | 90 | 180 | 270 {
   const normalized = ((value % 360) + 360) % 360
@@ -692,6 +963,61 @@ function getDraftRoutePoints(
     )
     }
 
+
+const edgeSegments = useMemo(() => {
+  const segments: Array<{
+  kind: 'edge' | 'partial'
+  id: string
+  segmentIndex: number
+  from: Point
+  to: Point
+}> = []
+
+  // 🔵 REAL EDGES
+  for (const edge of edges) {
+    const sourceNode = nodes.find((n) => n.id === edge.source)
+    const targetNode = nodes.find((n) => n.id === edge.target)
+    if (!sourceNode || !targetNode) continue
+
+    const start =
+      edge.data?.startAnchor ??
+      getPinAnchor(sourceNode, edge.sourceHandle ?? '')
+
+    const end =
+      edge.data?.endAnchor ??
+      getPinAnchor(targetNode, edge.targetHandle ?? '')
+
+    const route = [start, ...(edge.data?.points ?? []), end]
+
+    for (let i = 0; i < route.length - 1; i++) {
+      segments.push({
+        kind: 'edge',
+        id: edge.id,
+        segmentIndex: i,
+        from: route[i],
+        to: route[i + 1],
+        })
+    }
+  }
+
+  // 🟡 PARTIAL WIRES (THIS WAS MISSING)
+  for (const wire of partialWires) {
+    const route = wire.points
+
+    for (let i = 0; i < route.length - 1; i++) {
+      segments.push({
+        kind: 'partial',
+        id: wire.id,
+        segmentIndex: i,
+        from: route[i],
+        to: route[i + 1],
+        })
+    }
+  }
+
+  return segments
+}, [edges, partialWires, nodes])
+
   const selectedNode = useMemo(() => {
     if (selectedNodeIds.length !== 1) return null
     return nodes.find((n) => n.id === selectedNodeIds[0]) ?? null
@@ -987,7 +1313,7 @@ const startOrFinishWire = (
             points: finalPoints,
             startAnchor,
             endAnchor,
-            stroke: '#111',
+            stroke: '#111111',
             strokeWidth: 2,
         },
       }
@@ -1054,6 +1380,7 @@ const startOrFinishWire = (
     setSelectedNodeIds([])
     setSelectedEdgeIds([])
     setPickedNodeId(null)
+    setSelectedSegments([])
   }
 
   function updateSelectedEdgeData(patch: Partial<OrthogonalEdgeData>) {
@@ -1184,15 +1511,25 @@ const startOrFinishWire = (
     })
     }, [nodes, edges, partialWires, draft, wireMode, selectedNodeIds])
 
-  const displayEdges: FlowEdge[] = useMemo(() => {
-    const selectedSet = new Set(selectedEdgeIds)
+ const displayEdges: FlowEdge[] = useMemo(() => {
+  const selectedSet = new Set(selectedEdgeIds)
 
-    return edges.map((edge) => ({
+  return edges.map((edge) => {
+    const stroke = edge.data?.stroke ?? '#111111'
+    const strokeWidth = edge.data?.strokeWidth ?? 2
+
+    return {
       ...edge,
       selected: selectedSet.has(edge.id),
-      style: selectedSet.has(edge.id) ? selectedEdgeStyle : edgeStyle,
-    }))
-  }, [edges, selectedEdgeIds])
+      style: {
+        stroke: selectedSet.has(edge.id) ? '#2563eb' : stroke,
+        strokeWidth: selectedSet.has(edge.id) ? 3 : strokeWidth,
+        strokeLinecap: 'square',
+        strokeLinejoin: 'miter',
+      },
+    }
+  })
+}, [edges, selectedEdgeIds])
 
 function handleNodeClick(event: React.MouseEvent, node: FlowNode) {
   if (wireMode || draft) return
@@ -1241,6 +1578,7 @@ function handleNodeClick(event: React.MouseEvent, node: FlowNode) {
   // Optional: clear delete-selection on normal click
   setSelectedNodeIds([])
   setSelectedEdgeIds([])
+  setSelectedSegments([])
 }
 
 function pointsTouch(a: Point, b: Point, tolerance = 1) {
@@ -1274,6 +1612,7 @@ function pointsTouch(a: Point, b: Point, tolerance = 1) {
   setPickedNodeId(null)
   setSelectedNodeIds([])
   setSelectedEdgeIds([edge.id])
+  setSelectedSegments([])
 }
 
   const handleMouseMove: React.MouseEventHandler<HTMLDivElement> = (event) => {
@@ -1323,6 +1662,7 @@ const handlePaneClick = (event: React.MouseEvent | MouseEvent) => {
     // optional: clear delete selection on empty click
     setSelectedNodeIds([])
     setSelectedEdgeIds([])
+    setSelectedSegments([])
     return
   }
 
@@ -1386,16 +1726,35 @@ const handlePaneClick = (event: React.MouseEvent | MouseEvent) => {
     }
   }
 
+  const partialSegments = useMemo(() => {
+  return partialWires.flatMap((wire) => {
+    const result: Array<{
+      id: string
+      segmentIndex: number
+      from: Point
+      to: Point
+      style: OrthogonalEdgeSegmentStyle
+    }> = []
+
+    for (let i = 0; i < wire.points.length - 1; i += 1) {
+      result.push({
+        id: wire.id,
+        segmentIndex: i,
+        from: wire.points[i],
+        to: wire.points[i + 1],
+        style: wire.segmentStyles?.[i] ?? {},
+      })
+    }
+
+    return result
+  })
+}, [partialWires])
   const previewPath = useMemo(() => {
     if (!draft || !mouseFlow) return ''
 
     const route = getDraftRoutePoints(draft, mouseFlow)
     return routeToSvgPath(route)
     }, [draft, mouseFlow])
-
-  const partialPaths = useMemo(() => {
-    return partialWires.map((wire) => routeToSvgPath(wire.points)).filter(Boolean)
-  }, [partialWires])
 
   return (
     <div
@@ -1448,34 +1807,10 @@ const handlePaneClick = (event: React.MouseEvent | MouseEvent) => {
             defaultData: { inputCount: 2 },
           },
           {
-            type: 'andGate',
-            label: 'AND 3',
-            category: 'Logic Gates',
-            defaultData: { inputCount: 3 },
-          },
-          {
-            type: 'andGate',
-            label: 'AND 4',
-            category: 'Logic Gates',
-            defaultData: { inputCount: 4 },
-          },
-          {
             type: 'orGate',
             label: 'OR',
             category: 'Logic Gates',
             defaultData: { inputCount: 2},
-          },
-          {
-            type: 'orGate',
-            label: 'OR 3',
-            category: 'Logic Gates',
-            defaultData: { inputCount: 3 },
-          },
-          {
-            type: 'orGate',
-            label: 'OR 4',
-            category: 'Logic Gates',
-            defaultData: { inputCount: 4 },
           },
           {
             type: 'norGate',
@@ -1484,46 +1819,16 @@ const handlePaneClick = (event: React.MouseEvent | MouseEvent) => {
             defaultData: { inputCount: 2 },
           },
           {
-            type: 'norGate',
-            label: 'NOR 3',
-            category: 'Logic Gates',
-            defaultData: { inputCount: 3 },
-          },
-          {
             type: 'xorGate',
             label: 'XOR',
             category: 'Logic Gates',
             defaultData: { inputCount: 2 },
           },
           {
-            type: 'xorGate',
-            label: 'XOR 3',
-            category: 'Logic Gates',
-            defaultData: { inputCount: 3 },
-          },
-          {
-            type: 'xorGate',
-            label: 'XOR 4',
-            category: 'Logic Gates',
-            defaultData: { inputCount: 4 },
-          },
-          {
             type: 'nandGate',
             label: 'NAND',
             category: 'Logic Gates',
             defaultData: { inputCount: 2 },
-          },
-          {
-            type: 'nandGate',
-            label: 'NAND 3',
-            category: 'Logic Gates',
-            defaultData: { inputCount: 3 },
-          },
-          {
-            type: 'nandGate',
-            label: 'NAND 4',
-            category: 'Logic Gates',
-            defaultData: { inputCount: 4 },
           },
           {
             type: 'bufferGate',
@@ -1552,6 +1857,40 @@ const handlePaneClick = (event: React.MouseEvent | MouseEvent) => {
             category: 'Storage',
             defaultData: {},
           },
+          {
+            type: 'xnorGate',
+            label: 'XNOR',
+            category: 'Logic Gates',
+            defaultData: {
+              inputCount: 2,
+              scale: 1,
+              label: '',
+              fillColor: '#ffffff',
+              strokeColor: '#111111',
+              strokeWidth: 2,
+              labelColor: '#111111',
+              labelSize: 14,
+              labelOffsetX: 0,
+              labelOffsetY: 0,
+            },
+          },
+          {
+            type: 'muxGate',
+            label: 'MUX',
+            category: 'Logic Gates',
+            defaultData: {
+                selectWidth: 1,
+                selectPosition: 'bottom',
+                label: '',
+                fillColor: '#ffffff',
+                strokeColor: '#111111',
+                strokeWidth: 2,
+                labelColor: '#111111',
+                labelSize: 14,
+                labelOffsetX: 0,
+                labelOffsetY: 0,
+            },
+            }
         ]}
       />
 
@@ -1560,11 +1899,14 @@ const handlePaneClick = (event: React.MouseEvent | MouseEvent) => {
         setOpen={setRightOpen}
         selectedNode={selectedNode}
         selectedEdge={selectedEdge}
+        selectedSegments={selectedSegments}
+        selectedSegmentStyle={selectedSegmentStyle}
         codeValue={tikzCodeText}
         onCodeChange={setTikzCodeText}
         onResetCode={() => setTikzCodeText(generatedTikz)}
         onUpdateSelectedNodeData={updateSelectedNodeData}
         onUpdateSelectedEdgeData={updateSelectedEdgeData}
+        onUpdateSelectedSegmentsStyle={updateSelectedSegmentsStyle}
         />
 
       <ReactFlow
@@ -1599,23 +1941,27 @@ const handlePaneClick = (event: React.MouseEvent | MouseEvent) => {
         }}
         >
         <g transform={`translate(${viewport.x}, ${viewport.y}) scale(${viewport.zoom})`}>
-            {partialPaths.map((d, index) => (
-                <path
-                key={`partial-${index}`}
-                d={d}
-                fill="none"
-                stroke="#111"
-                strokeWidth={2}
-                strokeLinecap="square"
-                strokeLinejoin="miter"
-                />
-            ))}
+            {partialSegments.map((segment) => {
+                const d = `M ${segment.from.x} ${segment.from.y} L ${segment.to.x} ${segment.to.y}`
+
+                return (
+                    <path
+                    key={`partial-${segment.id}-${segment.segmentIndex}`}
+                    d={d}
+                    fill="none"
+                    stroke={segment.style.stroke ?? '#111111'}
+                    strokeWidth={segment.style.strokeWidth ?? 2}
+                    strokeLinecap="square"
+                    strokeLinejoin="miter"
+                    />
+                )
+                })}
 
             {previewPath && (
                 <path
                 d={previewPath}
                 fill="none"
-                stroke="#111"
+                stroke="#111111"
                 strokeWidth={2}
                 strokeLinecap="square"
                 strokeLinejoin="miter"
@@ -1640,20 +1986,102 @@ const handlePaneClick = (event: React.MouseEvent | MouseEvent) => {
                     point = getPinAnchor(node, inv.attachedTo.handleId)
                 }
 
+                let strokeColor = '#111111'
+                let fillColor = '#ffffff'
+                let strokeWidth = 2
+
+                if (inv.attachedTo.kind === 'pin' && inv.attachedTo.nodeId) {
+                const attachedNode = nodes.find((n) => n.id === inv.attachedTo.nodeId)
+
+                if (attachedNode) {
+                    strokeColor =
+                    typeof attachedNode.data?.strokeColor === 'string'
+                        ? attachedNode.data.strokeColor
+                        : '#111111'
+
+                    fillColor =
+                    typeof attachedNode.data?.fillColor === 'string'
+                        ? attachedNode.data.fillColor
+                        : '#ffffff'
+
+                    strokeWidth =
+                    typeof attachedNode.data?.strokeWidth === 'number'
+                        ? attachedNode.data.strokeWidth
+                        : 2
+                }
+                }
+
                 return (
-                    <circle
+                <circle
                     key={inv.id}
                     cx={point.x}
                     cy={point.y}
                     r={4}
-                    fill="white"
-                    stroke="#111"
-                    strokeWidth={2}
-                    />
+                    fill={fillColor}
+                    stroke={strokeColor}
+                    strokeWidth={strokeWidth}
+                />
                 )
                 })}
         </g>
       </svg>
+
+      <svg
+        width="100%"
+        height="100%"
+        style={{
+            position: 'absolute',
+            inset: 0,
+            pointerEvents: 'none',
+            display: 'block',
+            overflow: 'hidden',
+        }}
+        >
+        <g transform={`translate(${viewport.x}, ${viewport.y}) scale(${viewport.zoom})`}>
+            {edgeSegments.map((segment) => {
+            const isSelected = selectedSegments.some(
+                (s) =>
+                s.kind === segment.kind && s.id === segment.id &&
+                s.segmentIndex === segment.segmentIndex
+            )
+
+            return (
+                <g key={`${segment.kind}-${segment.id}-segment-hit-${segment.segmentIndex}`}>
+                <line
+                    x1={segment.from.x}
+                    y1={segment.from.y}
+                    x2={segment.to.x}
+                    y2={segment.to.y}
+                    stroke="transparent"
+                    strokeWidth={20}
+                    pointerEvents="stroke"
+                    onMouseDown={(e) =>
+                        handleSegmentClick(
+                            e,
+                            segment.kind,
+                            segment.id,
+                            segment.segmentIndex,
+                            segment
+                            )
+                    }
+                />
+
+                {isSelected ? (
+                    <line
+                    x1={segment.from.x}
+                    y1={segment.from.y}
+                    x2={segment.to.x}
+                    y2={segment.to.y}
+                    stroke="rgba(37, 99, 235, 0.6)"
+                    strokeWidth={3}
+                    pointerEvents="none"
+                    />
+                ) : null}
+                </g>
+            )
+            })}
+        </g>
+        </svg>
 
       <div
         style={{
@@ -1695,7 +2123,7 @@ const handlePaneClick = (event: React.MouseEvent | MouseEvent) => {
                     height: 5,
                     transform: 'translate(-50%, -50%)',
                     borderRadius: '50%',
-                    background: '#111',
+                    background: '#111111',
                     pointerEvents: 'none',
                     opacity: wireMode ? 0.9 : 0,
                     transition: 'opacity 0.12s ease',
@@ -1709,10 +2137,18 @@ const handlePaneClick = (event: React.MouseEvent | MouseEvent) => {
   )
 }
 
-export default function CircuitCanvas() {
+export default function CircuitCanvas({
+  leftOpen,
+  setLeftOpen,
+  setWorkspaceActions,
+}: CircuitCanvasProps) {
   return (
     <ReactFlowProvider>
-      <FlowCanvas />
+      <FlowCanvas
+        leftOpen={leftOpen}
+        setLeftOpen={setLeftOpen}
+        setWorkspaceActions={setWorkspaceActions}
+      />
     </ReactFlowProvider>
   )
 }

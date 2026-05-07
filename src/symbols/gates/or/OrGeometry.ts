@@ -1,15 +1,12 @@
 import type { Point } from '../../../wires/OrthogonalEdge'
 import { getGeometryBounds } from '../../common/geometryBounds'
+import { SYMBOL_CENTER_Y, SYMBOL_PIN_SPACING } from '../../common/layout'
+import { getSymbolScale, s } from '../../common/scale'
 
 export type PinPoint = {
   x: number
   y: number
 }
-
-import {
-  SYMBOL_CENTER_Y,
-  SYMBOL_PIN_SPACING,
-} from '../../common/layout'
 
 export type OrGeometry = {
   width: number
@@ -51,60 +48,68 @@ export function getOrInputHandleId(index: number) {
   return `in${index + 1}`
 }
 
-export function getOrGeometry(inputCount = DEFAULT_INPUT_COUNT): OrGeometry {
+export function getOrGeometry(
+  inputCount = DEFAULT_INPUT_COUNT,
+  rawScale: unknown = 1
+): OrGeometry {
+  const safeInputCount = Math.max(2, Math.floor(inputCount))
+  const scale = getSymbolScale(rawScale)
 
-const safeInputCount = Math.max(2, Math.floor(inputCount))
+  const inputSpacing = s(SYMBOL_PIN_SPACING, scale)
+  const bodyMidY = s(SYMBOL_CENTER_Y, scale)
 
-const inputSpacing = SYMBOL_PIN_SPACING
-const bodyMidY = SYMBOL_CENTER_Y
+  const inputPins: PinPoint[] = Array.from(
+    { length: safeInputCount },
+    (_, index) => ({
+      x: 0,
+      y: bodyMidY + (index - (safeInputCount - 1) / 2) * inputSpacing,
+    })
+  )
 
-const inputPins: PinPoint[] = Array.from({ length: safeInputCount }, (_, index) => ({
-  x: 0,
-  y: bodyMidY + (index - (safeInputCount - 1) / 2) * inputSpacing,
-}))
+  const bodyTopY = inputPins[0].y - s(12, scale)
+  const bodyBottomY = inputPins[inputPins.length - 1].y + s(12, scale)
 
-const bodyTopY = inputPins[0].y - 12
-const bodyBottomY = inputPins[inputPins.length - 1].y + 12
+  const inputStubEndX = s(18, scale)
 
-const inputStubEndX = 18
+  const bodyStartX = s(14, scale)
+  const bodyBackControlX1 = s(26, scale)
+  const bodyBackControlX2 = s(26, scale)
 
-const bodyStartX = 14
-const bodyBackControlX1 = 26
-const bodyBackControlX2 = 26
-const bodyTopControlX = 88
-const bodyBottomControlX = 88
-const bodyFrontX = 78 + (safeInputCount - 2) * 12
-const bodyFrontControlX = bodyFrontX - 6
+  const bodyFrontX = s(78 + (safeInputCount - 2) * 12, scale)
+  const bodyFrontControlX = bodyFrontX - s(6, scale)
 
-const outputStubStartX = bodyFrontX
-const outputStubEndX = outputStubStartX + 18
+  const bodyTopControlX = bodyFrontX + s(10, scale)
+  const bodyBottomControlX = bodyFrontX + s(10, scale)
 
-const maxBodyX = Math.max(
-  bodyStartX,
-  bodyBackControlX1,
-  bodyBackControlX2,
-  bodyTopControlX,
-  bodyBottomControlX,
-  bodyFrontControlX,
-  bodyFrontX,
-  outputStubEndX
-)
+  const outputStubStartX = bodyFrontX
+  const outputStubEndX = outputStubStartX + s(18, scale)
 
-const maxBodyY = Math.max(
-  bodyBottomY,
-  bodyMidY,
-  ...inputPins.map((pin) => pin.y)
-)
+  const maxBodyX = Math.max(
+    bodyStartX,
+    bodyBackControlX1,
+    bodyBackControlX2,
+    bodyTopControlX,
+    bodyBottomControlX,
+    bodyFrontControlX,
+    bodyFrontX,
+    outputStubEndX
+  )
 
-const { width, height } = getGeometryBounds({
-  maxX: maxBodyX,
-  maxY: maxBodyY,
-  paddingX: 10,
-  paddingY: 10,
-})
+  const maxBodyY = Math.max(
+    bodyBottomY,
+    bodyMidY,
+    ...inputPins.map((pin) => pin.y)
+  )
 
-const labelX = 55
-const labelY = bodyMidY + 5
+  const { width, height } = getGeometryBounds({
+    maxX: maxBodyX,
+    maxY: maxBodyY,
+    paddingX: s(14, scale),
+    paddingY: s(14, scale),
+  })
+
+  const labelX = bodyStartX + (bodyFrontX - bodyStartX) / 2
+  const labelY = bodyMidY + s(5, scale)
 
   return {
     width,
@@ -133,7 +138,7 @@ const labelY = bodyMidY + 5
     labelX,
     labelY,
 
-    pinCircleRadius: 3.5,
+    pinCircleRadius: Math.max(3.5, 3.5 * Math.sqrt(scale)),
     connectedOverlap: 2,
 
     centerX: width / 2,
@@ -141,15 +146,16 @@ const labelY = bodyMidY + 5
   }
 }
 
-export const OR_GEOMETRY = getOrGeometry(DEFAULT_INPUT_COUNT)
+export const OR_GEOMETRY = getOrGeometry(DEFAULT_INPUT_COUNT, 1)
 
 export function getOrPinAnchor(
   nodeX: number,
   nodeY: number,
   handleId: string,
-  inputCount = DEFAULT_INPUT_COUNT
+  inputCount = DEFAULT_INPUT_COUNT,
+  rawScale: unknown = 1
 ): Point {
-  const geometry = getOrGeometry(inputCount)
+  const geometry = getOrGeometry(inputCount, rawScale)
   const overlap = geometry.connectedOverlap
 
   if (handleId === 'out') {
@@ -160,6 +166,7 @@ export function getOrPinAnchor(
   }
 
   const match = /^in(\d+)$/.exec(handleId)
+
   if (match) {
     const index = Number(match[1]) - 1
     const pin = geometry.inputPins[index] ?? geometry.inputPins[0]

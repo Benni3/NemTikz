@@ -12,27 +12,35 @@ export type PinDefinition = {
 }
 
 export type SymbolNodeData = {
-  label?: string
-  occupiedHandles?: string[]
-  wireMode?: boolean
-
   inputCount?: number
-  outputCount?: number
+
+  selectWidth?: number
+  selectPosition?: 'top' | 'bottom'
+
+  scale?: number // 1–10
+  
+  showSelectEncoding?: boolean
 
   rotation?: 0 | 90 | 180 | 270
 
+  label?: string
   labelColor?: string
   labelSize?: number
   labelOffsetX?: number
   labelOffsetY?: number
 
+  strokeColor?: string
+  fillColor?: string
+  strokeWidth?: number
+
+  occupiedHandles?: string[]
+  wireMode?: boolean
+
   onPinClick?: (
     nodeId: string,
     handleId: string,
-    handleType: PinKind
+    handleType: 'source' | 'target'
   ) => void
-
-  [key: string]: unknown
 }
 
 export type SymbolNode = Node<SymbolNodeData>

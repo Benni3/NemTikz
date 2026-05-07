@@ -1,10 +1,6 @@
 import type { Point } from '../../../wires/OrthogonalEdge'
 import { getGeometryBounds } from '../../common/geometryBounds'
-import {
-  SMALL_GATE_TOP_Y,
-  SYMBOL_CENTER_Y,
-  SYMBOL_GRID,
-} from '../../common/layout'
+import { getSymbolScale, s } from '../../common/scale'
 
 export type PinPoint = {
   x: number
@@ -44,44 +40,41 @@ export type AdderGeometry = {
   centerY: number
 }
 
-export function getAdderGeometry(): AdderGeometry {
-    const HALF_GRID = SYMBOL_GRID / 2
+export function getAdderGeometry(rawScale: unknown = 1): AdderGeometry {
+  const scale = getSymbolScale(rawScale)
 
-    const bodyTopY = 20
-    const bodyBottomY = 100
-    const bodyMidY = 60
+  const bodyTopY = s(20, scale)
+  const bodyBottomY = s(100, scale)
+  const bodyMidY = s(60, scale)
 
+  const bodyLeftX = s(20, scale)
+  const bodyRightX = s(80, scale)
 
-    const bodyLeftX = 20
-    const bodyRightX = 80
+  const inputStubEndX = bodyLeftX
+  const outputStubStartX = bodyRightX
+  const outputStubEndX = outputStubStartX + s(20, scale)
 
-    const inputStubEndX = bodyLeftX
-    const outputStubStartX = bodyRightX
-    const outputStubEndX = outputStubStartX + 20
+  const inA: PinPoint = { x: 0, y: s(40, scale) }
+  const inB: PinPoint = { x: 0, y: s(80, scale) }
+  const out: PinPoint = { x: outputStubEndX, y: bodyMidY }
 
-    // pins on grid / half-grid
-    const inA: PinPoint = { x: 0, y: 40 }
-    const inB: PinPoint = { x: 0, y: 80 }
-    const out: PinPoint = { x: outputStubEndX, y: 60 }
+  const notchInsetX = s(15, scale)
+  const notchTipX = bodyLeftX + notchInsetX
+  const notchMidY = bodyMidY
+  const notchHalfHeight = s(10, scale)
 
-    // notch tuned to look cleaner
-    const notchInsetX = 15
-    const notchTipX = bodyLeftX + notchInsetX
-    const notchMidY = 60
-    const notchHalfHeight = 10
+  const plusX = s(50, scale)
+  const plusY = bodyMidY
 
-    const plusX = 50
-    const plusY = 60
+  const maxBodyX = Math.max(bodyRightX, outputStubEndX)
+  const maxBodyY = Math.max(bodyBottomY, inA.y, inB.y, out.y)
 
-    const maxBodyX = Math.max(bodyRightX, outputStubEndX)
-    const maxBodyY = Math.max(bodyBottomY, inA.y, inB.y, out.y)
-
-    const { width, height } = getGeometryBounds({
-        maxX: maxBodyX,
-        maxY: maxBodyY,
-        paddingX: 12,
-        paddingY: 12,
-    })
+  const { width, height } = getGeometryBounds({
+    maxX: maxBodyX,
+    maxY: maxBodyY,
+    paddingX: s(12, scale),
+    paddingY: s(12, scale),
+  })
 
   return {
     width,
@@ -109,22 +102,23 @@ export function getAdderGeometry(): AdderGeometry {
     plusX,
     plusY,
 
-    pinCircleRadius: 3.5,
+    pinCircleRadius: Math.max(3.5, 3.5 * Math.sqrt(scale)),
     connectedOverlap: 2,
-    
+
     centerX: width / 2,
     centerY: height / 2,
   }
 }
 
-export const ADDER_GEOMETRY = getAdderGeometry()
+export const ADDER_GEOMETRY = getAdderGeometry(1)
 
 export function getAdderPinAnchor(
   nodeX: number,
   nodeY: number,
-  handleId: string
+  handleId: string,
+  rawScale: unknown = 1
 ): Point {
-  const geometry = getAdderGeometry()
+  const geometry = getAdderGeometry(rawScale)
   const overlap = geometry.connectedOverlap
 
   if (handleId === 'inA') {

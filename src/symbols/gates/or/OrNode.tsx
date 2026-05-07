@@ -1,6 +1,6 @@
-import { Position, type NodeProps } from '@xyflow/react'
 import Pin from '../../common/Pin'
 import type { SymbolNodeData } from '../../types'
+import { getSymbolStyle } from '../../common/symbolStyle'
 import {
   OR_GEOMETRY,
   getOrGeometry,
@@ -9,6 +9,13 @@ import {
   type OrGeometry,
   type PinPoint,
 } from './OrGeometry'
+
+import { useEffect } from 'react'
+import {
+  Position,
+  type NodeProps,
+  useUpdateNodeInternals,
+} from '@xyflow/react'
 
 export { OR_GEOMETRY, getOrGeometry, getOrInputHandleId, getOrPinAnchor }
 export type { OrGeometry, PinPoint }
@@ -23,11 +30,15 @@ function InputPinVisual({
   pin,
   occupied,
   showCircle,
+  strokeColor,
+  strokeWidth,
 }: {
   geometry: OrGeometry
   pin: PinPoint
   occupied: boolean
   showCircle: boolean
+  strokeColor: string
+  strokeWidth: number
 }) {
   const startX = occupied ? pin.x - geometry.connectedOverlap : pin.x
 
@@ -38,8 +49,8 @@ function InputPinVisual({
         y1={pin.y}
         x2={geometry.inputStubEndX}
         y2={pin.y}
-        stroke="#111"
-        strokeWidth="2"
+        stroke={strokeColor}
+        strokeWidth={strokeWidth}
         strokeLinecap="square"
       />
       {showCircle && (
@@ -47,7 +58,7 @@ function InputPinVisual({
           cx={pin.x}
           cy={pin.y}
           r={geometry.pinCircleRadius}
-          fill="#111"
+          fill={strokeColor}
         />
       )}
     </>
@@ -58,10 +69,14 @@ function OutputPinVisual({
   geometry,
   occupied,
   showCircle,
+  strokeColor,
+  strokeWidth,
 }: {
   geometry: OrGeometry
   occupied: boolean
   showCircle: boolean
+  strokeColor: string
+  strokeWidth: number
 }) {
   const endX = occupied
     ? geometry.outputStubEndX + geometry.connectedOverlap
@@ -74,8 +89,8 @@ function OutputPinVisual({
         y1={geometry.out.y}
         x2={endX}
         y2={geometry.out.y}
-        stroke="#111"
-        strokeWidth="2"
+        stroke={strokeColor}
+        strokeWidth={strokeWidth}
         strokeLinecap="square"
       />
       {showCircle && (
@@ -83,7 +98,7 @@ function OutputPinVisual({
           cx={geometry.out.x}
           cy={geometry.out.y}
           r={geometry.pinCircleRadius}
-          fill="#111"
+          fill={strokeColor}
         />
       )}
     </>
@@ -96,26 +111,38 @@ export function OrNode({ id, data }: NodeProps) {
   const wireMode = nodeData.wireMode ?? false
   const inputCount = nodeData.inputCount ?? 2
   const rotation = nodeData.rotation ?? 0
+  const style = getSymbolStyle(nodeData)
+  const scale = nodeData.scale ?? 1
+  const geometry = getOrGeometry(inputCount, scale)
 
-  const geometry = getOrGeometry(inputCount)
 
   const isOccupied = (handleId: string) => occupiedHandles.includes(handleId)
   const shouldShowCircle = (handleId: string) =>
     !wireMode && !isOccupied(handleId)
 
+
+  const curveTightness = 6 * scale
+  const backCurve = 10 * scale
+  
   const bodyPath = `
     M ${geometry.bodyStartX} ${geometry.bodyTopY}
     C ${geometry.bodyTopControlX} ${geometry.bodyTopY}
-      ${geometry.bodyFrontControlX} ${geometry.bodyMidY - 6}
+      ${geometry.bodyFrontControlX} ${geometry.bodyMidY - curveTightness}
       ${geometry.bodyFrontX} ${geometry.bodyMidY}
-    C ${geometry.bodyFrontControlX} ${geometry.bodyMidY + 6}
+    C ${geometry.bodyFrontControlX} ${geometry.bodyMidY + curveTightness}
       ${geometry.bodyBottomControlX} ${geometry.bodyBottomY}
       ${geometry.bodyStartX} ${geometry.bodyBottomY}
-    C ${geometry.bodyBackControlX1} ${geometry.bodyBottomY - 10}
-      ${geometry.bodyBackControlX2} ${geometry.bodyTopY + 10}
+    C ${geometry.bodyBackControlX1} ${geometry.bodyBottomY - backCurve}
+      ${geometry.bodyBackControlX2} ${geometry.bodyTopY + backCurve}
       ${geometry.bodyStartX} ${geometry.bodyTopY}
     Z
   `
+
+  const updateNodeInternals = useUpdateNodeInternals()
+
+  useEffect(() => {
+    updateNodeInternals(id)
+  }, [id, inputCount, scale, geometry.width, geometry.height, updateNodeInternals])
 
   return (
     <div
@@ -135,7 +162,7 @@ export function OrNode({ id, data }: NodeProps) {
           overflow: 'visible',
         }}
       >
-        {geometry.inputPins.map((pin: PinPoint, index: number) => {
+        {geometry.inputPins.map((pin, index) => {
           const handleId = getOrInputHandleId(index)
 
           return (
@@ -170,7 +197,7 @@ export function OrNode({ id, data }: NodeProps) {
           viewBox={`0 0 ${geometry.width} ${geometry.height}`}
           style={{ overflow: 'visible' }}
         >
-          {geometry.inputPins.map((pin: PinPoint, index: number) => {
+          {geometry.inputPins.map((pin, index) => {
             const handleId = getOrInputHandleId(index)
 
             return (
@@ -180,6 +207,8 @@ export function OrNode({ id, data }: NodeProps) {
                 pin={pin}
                 occupied={isOccupied(handleId)}
                 showCircle={shouldShowCircle(handleId)}
+                strokeColor={style.strokeColor}
+                strokeWidth={style.strokeWidth}
               />
             )
           })}
@@ -188,23 +217,27 @@ export function OrNode({ id, data }: NodeProps) {
             geometry={geometry}
             occupied={isOccupied('out')}
             showCircle={shouldShowCircle('out')}
+            strokeColor={style.strokeColor}
+            strokeWidth={style.strokeWidth}
           />
 
           <path
             d={bodyPath}
-            fill="white"
-            stroke="#111"
-            strokeWidth="2"
+            fill={style.fillColor}
+            stroke={style.strokeColor}
+            strokeWidth={style.strokeWidth}
             strokeLinejoin="miter"
           />
 
           {nodeData.label && (
             <text
-              x={geometry.labelX}
-              y={geometry.labelY}
+              x={geometry.labelX + style.labelOffsetX}
+              y={geometry.labelY + style.labelOffsetY}
               textAnchor="middle"
-              fontSize="14"
-              fill="#111"
+              dominantBaseline="middle"
+              fontSize={style.labelSize}
+              fontWeight="700"
+              fill={style.labelColor}
             >
               {nodeData.label}
             </text>

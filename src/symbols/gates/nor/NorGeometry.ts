@@ -47,6 +47,7 @@ export function getNorGeometry(inputCount = DEFAULT_INPUT_COUNT): NorGeometry {
     outputLineEndX,
     totalWidth,
     width: totalWidth,
+    centerX: totalWidth / 2,
   }
 }
 
@@ -69,6 +70,7 @@ export function getNorPinAnchor(
   }
 
   const match = /^in(\d+)$/.exec(handleId)
+
   if (match) {
     const index = Number(match[1]) - 1
     const pin = geometry.inputPins[index] ?? geometry.inputPins[0]

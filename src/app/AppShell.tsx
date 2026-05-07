@@ -1,9 +1,9 @@
-import CircuitCanvas from '../editor/CircuitCanvas'
+import DrawingWorkspace from '../editor/DrawingWorkspace'
 
 export default function AppShell() {
   return (
     <div style={{ width: '100vw', height: '100vh' }}>
-      <CircuitCanvas />
+      <DrawingWorkspace />
     </div>
   )
 }

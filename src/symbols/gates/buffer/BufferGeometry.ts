@@ -1,16 +1,16 @@
 import type { Point } from '../../../wires/OrthogonalEdge'
 import { getGeometryBounds } from '../../common/geometryBounds'
-
-export type PinPoint = {
-  x: number
-  y: number
-}
-
 import {
   SYMBOL_CENTER_Y,
   SMALL_GATE_TOP_Y,
   SMALL_GATE_BOTTOM_Y,
 } from '../../common/layout'
+import { getSymbolScale, s } from '../../common/scale'
+
+export type PinPoint = {
+  x: number
+  y: number
+}
 
 export type BufferGeometry = {
   width: number
@@ -40,36 +40,29 @@ export type BufferGeometry = {
   centerY: number
 }
 
-export function getBufferGeometry(): BufferGeometry {
-  
-const bodyTopY = SMALL_GATE_TOP_Y
-const bodyBottomY = SMALL_GATE_BOTTOM_Y
-const bodyMidY = SYMBOL_CENTER_Y
+export function getBufferGeometry(rawScale: unknown = 1): BufferGeometry {
+  const scale = getSymbolScale(rawScale)
 
-const bodyLeftX = 12
-const bodyRightX = 58
+  const bodyTopY = s(SMALL_GATE_TOP_Y, scale)
+  const bodyBottomY = s(SMALL_GATE_BOTTOM_Y, scale)
+  const bodyMidY = s(SYMBOL_CENTER_Y, scale)
 
-const inputStubEndX = bodyLeftX
-const outputStubStartX = bodyRightX
-const outputStubEndX = outputStubStartX + 18
+  const bodyLeftX = s(12, scale)
+  const bodyRightX = s(58, scale)
 
-const maxBodyX = Math.max(
-  bodyLeftX,
-  bodyRightX,
-  outputStubEndX
-)
+  const inputStubEndX = bodyLeftX
+  const outputStubStartX = bodyRightX
+  const outputStubEndX = outputStubStartX + s(18, scale)
 
-const maxBodyY = Math.max(
-  bodyBottomY,
-  bodyMidY
-)
+  const maxBodyX = Math.max(bodyLeftX, bodyRightX, outputStubEndX)
+  const maxBodyY = Math.max(bodyBottomY, bodyMidY)
 
-const { width, height } = getGeometryBounds({
-  maxX: maxBodyX,
-  maxY: maxBodyY,
-  paddingX: 8,
-  paddingY: 10,
-})
+  const { width, height } = getGeometryBounds({
+    maxX: maxBodyX,
+    maxY: maxBodyY,
+    paddingX: s(8, scale),
+    paddingY: s(10, scale),
+  })
 
   return {
     width,
@@ -89,10 +82,10 @@ const { width, height } = getGeometryBounds({
     outputStubStartX,
     outputStubEndX,
 
-    labelX: 42,
-    labelY: bodyMidY + 5,
+    labelX: s(42, scale),
+    labelY: bodyMidY + s(5, scale),
 
-    pinCircleRadius: 3.5,
+    pinCircleRadius: Math.max(3.5, 3.5 * Math.sqrt(scale)),
     connectedOverlap: 2,
 
     centerX: width / 2,
@@ -100,14 +93,15 @@ const { width, height } = getGeometryBounds({
   }
 }
 
-export const BUFFER_GEOMETRY = getBufferGeometry()
+export const BUFFER_GEOMETRY = getBufferGeometry(1)
 
 export function getBufferPinAnchor(
   nodeX: number,
   nodeY: number,
-  handleId: string
+  handleId: string,
+  rawScale: unknown = 1
 ): Point {
-  const geometry = getBufferGeometry()
+  const geometry = getBufferGeometry(rawScale)
   const overlap = geometry.connectedOverlap
 
   if (handleId === 'in') {

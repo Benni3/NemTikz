@@ -14,12 +14,11 @@ export type NandGeometry = AndGeometry & {
   bubbleCenterY: number
   outputLineStartX: number
   outputLineEndX: number
-  totalWidth: number
 }
 
 const DEFAULT_INPUT_COUNT = 2
 
-export function getNandInputHandleId(index: number) {
+export function getNandInputHandleId(index: number): string {
   return getAndInputHandleId(index)
 }
 
@@ -32,10 +31,12 @@ export function getNandGeometry(inputCount = DEFAULT_INPUT_COUNT): NandGeometry 
 
   const outputLineStartX = bubbleCenterX + bubbleRadius
   const outputLineEndX = outputLineStartX + 14
-  const totalWidth = outputLineEndX + 8
+
+  const width = Math.max(andGeometry.width, outputLineEndX + 12)
 
   return {
     ...andGeometry,
+    width,
     out: {
       x: outputLineEndX,
       y: bubbleCenterY,
@@ -45,8 +46,6 @@ export function getNandGeometry(inputCount = DEFAULT_INPUT_COUNT): NandGeometry 
     bubbleCenterY,
     outputLineStartX,
     outputLineEndX,
-    totalWidth,
-    width: totalWidth,
   }
 }
 
@@ -69,6 +68,7 @@ export function getNandPinAnchor(
   }
 
   const match = /^in(\d+)$/.exec(handleId)
+
   if (match) {
     const index = Number(match[1]) - 1
     const pin = geometry.inputPins[index] ?? geometry.inputPins[0]

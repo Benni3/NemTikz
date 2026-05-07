@@ -3,6 +3,7 @@ import {
   getBufferGeometry,
   type BufferGeometry,
 } from '../buffer/BufferGeometry'
+import { getSymbolScale, s } from '../../common/scale'
 
 export type InvertGeometry = BufferGeometry & {
   bubbleRadius: number
@@ -13,16 +14,17 @@ export type InvertGeometry = BufferGeometry & {
   totalWidth: number
 }
 
-export function getInvertGeometry(): InvertGeometry {
-  const base = getBufferGeometry()
+export function getInvertGeometry(rawScale: unknown = 1): InvertGeometry {
+  const scale = getSymbolScale(rawScale)
+  const base = getBufferGeometry(scale)
 
-  const bubbleRadius = 4
-  const bubbleCenterX = base.bodyRightX + bubbleRadius + 1
+  const bubbleRadius = Math.max(4, 4 * Math.sqrt(scale))
+  const bubbleCenterX = base.bodyRightX + bubbleRadius + s(1, scale)
   const bubbleCenterY = base.bodyMidY
 
   const outputLineStartX = bubbleCenterX + bubbleRadius
-  const outputLineEndX = outputLineStartX + 14
-  const totalWidth = outputLineEndX + 8
+  const outputLineEndX = outputLineStartX + s(14, scale)
+  const totalWidth = outputLineEndX + s(8, scale)
 
   return {
     ...base,
@@ -37,17 +39,19 @@ export function getInvertGeometry(): InvertGeometry {
     outputLineEndX,
     totalWidth,
     width: totalWidth,
+    centerX: totalWidth / 2,
   }
 }
 
-export const INVERT_GEOMETRY = getInvertGeometry()
+export const INVERT_GEOMETRY = getInvertGeometry(1)
 
 export function getInvertPinAnchor(
   nodeX: number,
   nodeY: number,
-  handleId: string
+  handleId: string,
+  rawScale: unknown = 1
 ): Point {
-  const geometry = getInvertGeometry()
+  const geometry = getInvertGeometry(rawScale)
   const overlap = geometry.connectedOverlap
 
   if (handleId === 'in') {

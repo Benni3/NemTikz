@@ -13,6 +13,8 @@ export type AppFileHandle =
 
 type HeaderProps = {
   title?: string
+  centerTitle?: string
+  onTitleClick?: () => void
   onSave: (fileHandle: AppFileHandle, forceChoose?: boolean) => Promise<AppFileHandle>
   onLoad: (file: File) => void
 }
@@ -42,8 +44,11 @@ const buttonStyle: React.CSSProperties = {
   cursor: 'pointer',
 }
 
+
 export default function Header({
   title = 'NemTikz',
+  centerTitle,
+  onTitleClick,
   onSave,
   onLoad,
 }: HeaderProps) {
@@ -109,7 +114,8 @@ export default function Header({
           flex: '1 1 auto',
         }}
       >
-        <span
+       <span
+          onClick={onTitleClick}
           style={{
             fontSize: 26,
             fontWeight: 600,
@@ -117,11 +123,28 @@ export default function Header({
             overflow: 'hidden',
             textOverflow: 'ellipsis',
             whiteSpace: 'nowrap',
+            cursor: onTitleClick ? 'pointer' : 'default',
           }}
         >
           {title}
         </span>
       </div>
+
+      {centerTitle && (
+          <div
+            style={{
+              position: 'absolute',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              fontSize: 18,
+              fontWeight: 700,
+              color: '#111',
+              pointerEvents: 'none',
+            }}
+          >
+            {centerTitle}
+          </div>
+        )}
 
       <div
         style={{

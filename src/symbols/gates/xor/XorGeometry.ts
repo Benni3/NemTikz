@@ -5,6 +5,7 @@ import {
   type OrGeometry,
   type PinPoint,
 } from '../or/OrGeometry'
+import { getSymbolScale, s } from '../../common/scale'
 
 export type { PinPoint }
 
@@ -21,9 +22,13 @@ export function getXorInputHandleId(index: number) {
   return getOrInputHandleId(index)
 }
 
-export function getXorGeometry(inputCount = DEFAULT_INPUT_COUNT): XorGeometry {
-  const orGeometry = getOrGeometry(inputCount)
-  const offset = 8
+export function getXorGeometry(
+  inputCount = DEFAULT_INPUT_COUNT,
+  rawScale: unknown = 1
+): XorGeometry {
+  const scale = getSymbolScale(rawScale)
+  const orGeometry = getOrGeometry(inputCount, scale)
+  const offset = s(8, scale)
 
   return {
     ...orGeometry,
@@ -34,15 +39,16 @@ export function getXorGeometry(inputCount = DEFAULT_INPUT_COUNT): XorGeometry {
   }
 }
 
-export const XOR_GEOMETRY = getXorGeometry(DEFAULT_INPUT_COUNT)
+export const XOR_GEOMETRY = getXorGeometry(DEFAULT_INPUT_COUNT, 1)
 
 export function getXorPinAnchor(
   nodeX: number,
   nodeY: number,
   handleId: string,
-  inputCount = DEFAULT_INPUT_COUNT
+  inputCount = DEFAULT_INPUT_COUNT,
+  rawScale: unknown = 1
 ): Point {
-  const geometry = getXorGeometry(inputCount)
+  const geometry = getXorGeometry(inputCount, rawScale)
   const overlap = geometry.connectedOverlap
 
   if (handleId === 'out') {

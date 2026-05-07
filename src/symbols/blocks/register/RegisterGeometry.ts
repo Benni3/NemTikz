@@ -5,6 +5,7 @@ import {
   SMALL_GATE_BOTTOM_Y,
   SYMBOL_CENTER_Y,
 } from '../../common/layout'
+import { getSymbolScale, s } from '../../common/scale'
 
 export type PinPoint = {
   x: number
@@ -49,48 +50,48 @@ export type RegisterGeometry = {
   centerY: number
 }
 
-export function getRegisterGeometry(): RegisterGeometry {
-    const bodyTopY = SMALL_GATE_TOP_Y
-    const bodyBottomY = SMALL_GATE_BOTTOM_Y + 40
-    const bodyMidY = SYMBOL_CENTER_Y + 10
+export function getRegisterGeometry(rawScale: unknown = 1): RegisterGeometry {
+  const scale = getSymbolScale(rawScale)
 
-    const bodyLeftX = 20
-    const bodyRightX = 80
+  const bodyTopY = s(SMALL_GATE_TOP_Y, scale)
+  const bodyBottomY = s(SMALL_GATE_BOTTOM_Y + 40, scale)
+  const bodyMidY = s(SYMBOL_CENTER_Y + 10, scale)
 
-    // all pins on full-grid or half-grid rows
-    const dIn: PinPoint = { x: 0, y: bodyTopY + 20 }          // 40 if top is 20
-    const qOut: PinPoint = { x: bodyRightX + 20, y: bodyTopY + 20 }
-    const clkIn: PinPoint = { x: 0, y: bodyBottomY - 20 }     // 80 if bottom is 100
-    const bottomPin: PinPoint = { x: 50, y: bodyBottomY + 20 } // centered and on grid
+  const bodyLeftX = s(20, scale)
+  const bodyRightX = s(80, scale)
 
-    const inputStubEndX = bodyLeftX
-    const outputStubStartX = bodyRightX
-    const outputStubEndX = qOut.x
+  const dIn: PinPoint = { x: 0, y: bodyTopY + s(20, scale) }
+  const qOut: PinPoint = { x: bodyRightX + s(20, scale), y: bodyTopY + s(20, scale) }
+  const clkIn: PinPoint = { x: 0, y: bodyBottomY - s(20, scale) }
+  const bottomPin: PinPoint = { x: s(50, scale), y: bodyBottomY + s(20, scale) }
 
-    const bottomStubStartY = bodyBottomY
-    const bottomStubEndY = bottomPin.y
+  const inputStubEndX = bodyLeftX
+  const outputStubStartX = bodyRightX
+  const outputStubEndX = qOut.x
 
-    // clock triangle starts right at left edge, also aligned
-    const clockTriX = bodyLeftX
-    const clockTriY = clkIn.y
-    const clockTriWidth = 10
-    const clockTriHeight = 10
+  const bottomStubStartY = bodyBottomY
+  const bottomStubEndY = bottomPin.y
 
-    const dLabelX = bodyLeftX + 15
-    const dLabelY = bodyTopY + 20
+  const clockTriX = bodyLeftX
+  const clockTriY = clkIn.y
+  const clockTriWidth = s(10, scale)
+  const clockTriHeight = s(10, scale)
 
-    const qLabelX = bodyRightX - 15
-    const qLabelY = bodyTopY + 20
+  const dLabelX = bodyLeftX + s(15, scale)
+  const dLabelY = bodyTopY + s(20, scale)
 
-    const maxBodyX = Math.max(bodyRightX, qOut.x)
-    const maxBodyY = Math.max(bodyBottomY, bottomPin.y)
+  const qLabelX = bodyRightX - s(15, scale)
+  const qLabelY = bodyTopY + s(20, scale)
 
-    const { width, height } = getGeometryBounds({
-        maxX: maxBodyX,
-        maxY: maxBodyY,
-        paddingX: 10,
-        paddingY: 10,
-    })
+  const maxBodyX = Math.max(bodyRightX, qOut.x)
+  const maxBodyY = Math.max(bodyBottomY, bottomPin.y)
+
+  const { width, height } = getGeometryBounds({
+    maxX: maxBodyX,
+    maxY: maxBodyY,
+    paddingX: s(10, scale),
+    paddingY: s(10, scale),
+  })
 
   return {
     width,
@@ -123,7 +124,7 @@ export function getRegisterGeometry(): RegisterGeometry {
     qLabelX,
     qLabelY,
 
-    pinCircleRadius: 3.5,
+    pinCircleRadius: Math.max(3.5, 3.5 * Math.sqrt(scale)),
     connectedOverlap: 2,
 
     centerX: width / 2,
@@ -131,14 +132,15 @@ export function getRegisterGeometry(): RegisterGeometry {
   }
 }
 
-export const REGISTER_GEOMETRY = getRegisterGeometry()
+export const REGISTER_GEOMETRY = getRegisterGeometry(1)
 
 export function getRegisterPinAnchor(
   nodeX: number,
   nodeY: number,
-  handleId: string
+  handleId: string,
+  rawScale: unknown = 1
 ): Point {
-  const geometry = getRegisterGeometry()
+  const geometry = getRegisterGeometry(rawScale)
   const overlap = geometry.connectedOverlap
 
   if (handleId === 'dIn') {

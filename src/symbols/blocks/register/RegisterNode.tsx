@@ -1,6 +1,12 @@
-import { Position, type NodeProps } from '@xyflow/react'
+import { useEffect } from 'react'
+import {
+  Position,
+  type NodeProps,
+  useUpdateNodeInternals,
+} from '@xyflow/react'
 import Pin from '../../common/Pin'
 import type { SymbolNodeData } from '../../types'
+import { getSymbolStyle } from '../../common/symbolStyle'
 import {
   REGISTER_GEOMETRY,
   getRegisterGeometry,
@@ -12,7 +18,8 @@ export { REGISTER_GEOMETRY, getRegisterGeometry, getRegisterPinAnchor }
 export type { RegisterGeometry }
 
 export type RegisterNodeData = SymbolNodeData & {
-    rotation?: 0 | 90 | 180 | 270
+  scale?: number
+  rotation?: 0 | 90 | 180 | 270
 }
 
 function InputPinVisual({
@@ -22,6 +29,8 @@ function InputPinVisual({
   geometry,
   occupied,
   showCircle,
+  strokeColor,
+  strokeWidth,
 }: {
   x: number
   y: number
@@ -29,6 +38,8 @@ function InputPinVisual({
   geometry: RegisterGeometry
   occupied: boolean
   showCircle: boolean
+  strokeColor: string
+  strokeWidth: number
 }) {
   const startX = occupied ? x - geometry.connectedOverlap : x
 
@@ -39,11 +50,19 @@ function InputPinVisual({
         y1={y}
         x2={x2}
         y2={y}
-        stroke="#111"
-        strokeWidth="2"
+        stroke={strokeColor}
+        strokeWidth={strokeWidth}
         strokeLinecap="square"
       />
-      {showCircle && <circle cx={x} cy={y} r={geometry.pinCircleRadius} fill="#111" />}
+
+      {showCircle && (
+        <circle
+          cx={x}
+          cy={y}
+          r={geometry.pinCircleRadius}
+          fill={strokeColor}
+        />
+      )}
     </>
   )
 }
@@ -52,10 +71,14 @@ function OutputPinVisual({
   geometry,
   occupied,
   showCircle,
+  strokeColor,
+  strokeWidth,
 }: {
   geometry: RegisterGeometry
   occupied: boolean
   showCircle: boolean
+  strokeColor: string
+  strokeWidth: number
 }) {
   const endX = occupied
     ? geometry.outputStubEndX + geometry.connectedOverlap
@@ -68,16 +91,17 @@ function OutputPinVisual({
         y1={geometry.qOut.y}
         x2={endX}
         y2={geometry.qOut.y}
-        stroke="#111"
-        strokeWidth="2"
+        stroke={strokeColor}
+        strokeWidth={strokeWidth}
         strokeLinecap="square"
       />
+
       {showCircle && (
         <circle
           cx={geometry.qOut.x}
           cy={geometry.qOut.y}
           r={geometry.pinCircleRadius}
-          fill="#111"
+          fill={strokeColor}
         />
       )}
     </>
@@ -88,10 +112,14 @@ function BottomPinVisual({
   geometry,
   occupied,
   showCircle,
+  strokeColor,
+  strokeWidth,
 }: {
   geometry: RegisterGeometry
   occupied: boolean
   showCircle: boolean
+  strokeColor: string
+  strokeWidth: number
 }) {
   const endY = occupied
     ? geometry.bottomStubEndY + geometry.connectedOverlap
@@ -104,16 +132,17 @@ function BottomPinVisual({
         y1={geometry.bottomStubStartY}
         x2={geometry.bottomPin.x}
         y2={endY}
-        stroke="#111"
-        strokeWidth="2"
+        stroke={strokeColor}
+        strokeWidth={strokeWidth}
         strokeLinecap="square"
       />
+
       {showCircle && (
         <circle
           cx={geometry.bottomPin.x}
           cy={geometry.bottomPin.y}
           r={geometry.pinCircleRadius}
-          fill="#111"
+          fill={strokeColor}
         />
       )}
     </>
@@ -122,11 +151,19 @@ function BottomPinVisual({
 
 export function RegisterNode({ id, data }: NodeProps) {
   const nodeData = (data ?? {}) as RegisterNodeData
+
   const occupiedHandles = nodeData.occupiedHandles ?? []
   const wireMode = nodeData.wireMode ?? false
   const rotation = nodeData.rotation ?? 0
+  const scale = nodeData.scale ?? 1
 
-  const geometry = getRegisterGeometry()
+  const style = getSymbolStyle(nodeData)
+  const geometry = getRegisterGeometry(scale)
+  const updateNodeInternals = useUpdateNodeInternals()
+
+  useEffect(() => {
+    updateNodeInternals(id)
+  }, [id, scale, geometry.width, geometry.height, updateNodeInternals])
 
   const isOccupied = (handleId: string) => occupiedHandles.includes(handleId)
   const shouldShowCircle = (handleId: string) =>
@@ -156,9 +193,7 @@ export function RegisterNode({ id, data }: NodeProps) {
           position={Position.Left}
           top={`${geometry.dIn.y}px`}
           left={`${geometry.dIn.x}px`}
-          onPointerDown={() => {
-            nodeData.onPinClick?.(id, 'dIn', 'target')
-          }}
+          onPointerDown={() => nodeData.onPinClick?.(id, 'dIn', 'target')}
         />
 
         <Pin
@@ -167,9 +202,7 @@ export function RegisterNode({ id, data }: NodeProps) {
           position={Position.Left}
           top={`${geometry.clkIn.y}px`}
           left={`${geometry.clkIn.x}px`}
-          onPointerDown={() => {
-            nodeData.onPinClick?.(id, 'clkIn', 'target')
-          }}
+          onPointerDown={() => nodeData.onPinClick?.(id, 'clkIn', 'target')}
         />
 
         <Pin
@@ -178,9 +211,7 @@ export function RegisterNode({ id, data }: NodeProps) {
           position={Position.Right}
           top={`${geometry.qOut.y}px`}
           left={`${geometry.qOut.x}px`}
-          onPointerDown={() => {
-            nodeData.onPinClick?.(id, 'qOut', 'source')
-          }}
+          onPointerDown={() => nodeData.onPinClick?.(id, 'qOut', 'source')}
         />
 
         <Pin
@@ -189,9 +220,7 @@ export function RegisterNode({ id, data }: NodeProps) {
           position={Position.Bottom}
           top={`${geometry.bottomPin.y}px`}
           left={`${geometry.bottomPin.x}px`}
-          onPointerDown={() => {
-            nodeData.onPinClick?.(id, 'bottomPin', 'source')
-          }}
+          onPointerDown={() => nodeData.onPinClick?.(id, 'bottomPin', 'source')}
         />
 
         <svg
@@ -207,6 +236,8 @@ export function RegisterNode({ id, data }: NodeProps) {
             geometry={geometry}
             occupied={isOccupied('dIn')}
             showCircle={shouldShowCircle('dIn')}
+            strokeColor={style.strokeColor}
+            strokeWidth={style.strokeWidth}
           />
 
           <InputPinVisual
@@ -216,6 +247,8 @@ export function RegisterNode({ id, data }: NodeProps) {
             geometry={geometry}
             occupied={isOccupied('clkIn')}
             showCircle={shouldShowCircle('clkIn')}
+            strokeColor={style.strokeColor}
+            strokeWidth={style.strokeWidth}
           />
 
           <rect
@@ -223,9 +256,9 @@ export function RegisterNode({ id, data }: NodeProps) {
             y={geometry.bodyTopY}
             width={geometry.bodyRightX - geometry.bodyLeftX}
             height={geometry.bodyBottomY - geometry.bodyTopY}
-            fill="white"
-            stroke="#111"
-            strokeWidth="2"
+            fill={style.fillColor}
+            stroke={style.strokeColor}
+            strokeWidth={style.strokeWidth}
           />
 
           <path
@@ -234,9 +267,9 @@ export function RegisterNode({ id, data }: NodeProps) {
               L ${geometry.clockTriX + geometry.clockTriWidth} ${geometry.clockTriY}
               L ${geometry.clockTriX} ${geometry.clockTriY + geometry.clockTriHeight / 2}
             `}
-            fill="white"
-            stroke="#111"
-            strokeWidth="2"
+            fill={style.fillColor}
+            stroke={style.strokeColor}
+            strokeWidth={style.strokeWidth}
             strokeLinejoin="miter"
           />
 
@@ -244,21 +277,25 @@ export function RegisterNode({ id, data }: NodeProps) {
             geometry={geometry}
             occupied={isOccupied('qOut')}
             showCircle={shouldShowCircle('qOut')}
+            strokeColor={style.strokeColor}
+            strokeWidth={style.strokeWidth}
           />
 
           <BottomPinVisual
             geometry={geometry}
             occupied={isOccupied('bottomPin')}
             showCircle={shouldShowCircle('bottomPin')}
+            strokeColor={style.strokeColor}
+            strokeWidth={style.strokeWidth}
           />
 
           <text
             x={geometry.dLabelX}
             y={geometry.dLabelY}
             textAnchor="middle"
-            fontSize="14"
+            fontSize={style.labelSize}
             fontWeight="700"
-            fill="#111"
+            fill={style.labelColor}
           >
             D
           </text>
@@ -267,12 +304,26 @@ export function RegisterNode({ id, data }: NodeProps) {
             x={geometry.qLabelX}
             y={geometry.qLabelY}
             textAnchor="middle"
-            fontSize="14"
+            fontSize={style.labelSize}
             fontWeight="700"
-            fill="#111"
+            fill={style.labelColor}
           >
             Q
           </text>
+
+          {nodeData.label && (
+            <text
+              x={geometry.bodyMidY + style.labelOffsetX}
+              y={geometry.bodyBottomY - 14 * scale + style.labelOffsetY}
+              textAnchor="middle"
+              dominantBaseline="middle"
+              fontSize={style.labelSize}
+              fontWeight="700"
+              fill={style.labelColor}
+            >
+              {nodeData.label}
+            </text>
+          )}
         </svg>
       </div>
     </div>
